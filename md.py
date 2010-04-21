@@ -11,19 +11,15 @@ def LJ(r2):
 def cubic_lattice(L, D, N):
     n = np.ceil(N**(1.0 / D))
     l = L / n
-    print l
     ax = np.linspace(0, L, n, endpoint=False)
-    axs = [ax] * D
     x0 = np.array([l/2.0] * D)
-    result = np.array(list(product(*axs))) + x0
+    result = np.array(list(product(ax, repeat=D))) + x0
     rr = range(len(result))
     indices = []
     for i in range(len(result)-N):
         pos = np.random.randint(len(rr)-i)
-        print i, pos, rr[pos], rr
         indices.append(rr[pos])
         rr[pos], rr[len(rr)-i-1] = rr[len(rr)-i-1], rr[pos]  
-    print indices
     return np.delete(result, indices, axis=0)
     
 def mic(r, L):
@@ -32,7 +28,7 @@ def mic(r, L):
 
 class MD(object):
     
-    def __init__(self, size=10, D=2, nparts=8, T=1, cutoff=4.0, dt=0.001):
+    def __init__(self, size=10, D=2, nparts=32, T=1, cutoff=4.0, dt=0.001):
         self.size = size
         self.D = D
         self.nparts = nparts
@@ -40,7 +36,7 @@ class MD(object):
         self.cutoff2 = self.cutoff**2
         self.ecut = 4.0 * (1.0 / cutoff**12 - 1.0 / cutoff**6)
         self.dt = dt
-        self.positions = latt(size, D, nparts)
+        self.positions = cubic_lattice(size, D, nparts)
         self.velocities = np.random.random((nparts,D))
         vcm = np.sum(self.velocities, axis=0) / nparts
         self.velocities -= vcm
@@ -53,10 +49,13 @@ class MD(object):
         self._e = None
         self._ek = None
         self._ep = None
+        self._temp = None
         
     @property
     def T(self):
-        return np.sum(self.velocities**2) / (self.D * len(self.velocities))
+        if self._temp is None:
+            self._temp = np.sum(self.velocities**2) / (self.D * len(self.velocities))
+        return self._temp
         
     @property
     def EK(self):
@@ -115,5 +114,5 @@ class MD(object):
             
     
 if __name__ == '__main__':
-    print 'HEllO WORld'
+    m = MD()
     
