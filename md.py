@@ -8,7 +8,7 @@ def LJ(r2):
     ir6 = 1.0 / r2**3
     return 48 * ir2 * ir6 * (ir6 - 0.5)
     
-def latt(L, D, N):
+def cubic_lattice(L, D, N):
     n = np.ceil(N**(1.0 / D))
     l = L / n
     print l
@@ -100,7 +100,7 @@ class MD(object):
     def do_step(self):
         self._start_acums()
         self.positions += self.velocities * self.dt + 0.5 * self.forces * self.dt**2
-        self.positions = self.positions - np.floor_divide(self.positions, self.size)
+        self.positions = self.positions - np.rint(self.positions/self.size) * self.size
         self.velocities += 0.5 * self.forces * self.dt
         self.forces = np.zeros((self.nparts,self.D))
         for i, j in combinations(xrange(len(self.positions)), 2):
