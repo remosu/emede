@@ -2,11 +2,12 @@
 
 import sys
 import numpy as np
+cimport numpy as np
 from itertools import combinations, product
 
-def LJ(r2):
-    ir2 = 1.0 / r2
-    ir6 = 1.0 / r2**3
+cdef inline double LJ(double r2):
+    cdef double ir2 = 1.0 / r2
+    cdef double ir6 = 1.0 / r2**3
     return 48 * ir2 * ir6 * (ir6 - 0.5)
     
 def cubic_lattice(L, D, N):
@@ -23,12 +24,16 @@ def cubic_lattice(L, D, N):
         rr[pos], rr[len(rr)-i-1] = rr[len(rr)-i-1], rr[pos]  
     return np.delete(result, indices, axis=0)
     
-def mic(r, L):
+cdef inline mic(r, double L):
     mic = np.abs(r) > L / 2.0
     r[mic] = r[mic] - L * np.sign(r)[mic]
 
-class MD(object):
-    
+cdef class MD(object):
+    cdef double size
+    cdef int D
+    cdef int nparts
+    cdef double cutoff, cutoff2, ecut, dt, _e, _ek, _ep, _temp
+    cdef np.ndarray positions, velocities, forces
     def __init__(self, size=10, D=2, nparts=32, T=1, cutoff=4.0, dt=0.001):
         D = int(D)
         nparts = int(nparts)
@@ -49,27 +54,26 @@ class MD(object):
         self._start_acums()
     
     def _start_acums(self):
-        self._e = None
-        self._ek = None
-        self._ep = None
-        self._temp = None
+        self._e = 0.0
+        self._ek = 0.0
+        self._ep = 0.0
+        self._temp = 0.0
         
     @property
     def T(self):
-        if self._temp is None:
+        if self._temp == 0.0:
             self._temp = np.sum(self.velocities**2) / (self.D * len(self.velocities))
         return self._temp
         
     @property
     def EK(self):
-        if self._ek is None:
+        if self._ek == 0.0:
             self._ek = 0.5 * np.sum(self.velocities**2)
         return self._ek
         
     @property
     def EP(self):
-        if self._ep is None:
-            self._ep = 0.0
+        if self._ep == 0.0:
             for i, j in combinations(xrange(len(self.positions)), 2):
                 r = self.positions[i] - self.positions[j]
                 mic(r, self.size)
@@ -100,6 +104,8 @@ class MD(object):
         print 'min=', min
     
     def do_step(self):
+        cdef np.ndarray r
+        cdef double r2, ff
         self._start_acums()
         self.positions += self.velocities * self.dt + 0.5 * self.forces * self.dt**2
         self.positions = self.positions - np.rint(self.positions/self.size) * self.size
