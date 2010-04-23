@@ -1,15 +1,18 @@
 #! /usr/bin/env python
 
+# cython: profile=True
+
 import sys
 import numpy as np
 cimport numpy as np
 from itertools import combinations, product
 
-cdef inline double LJ(double r2):
-    cdef double ir2 = 1.0 / r2
-    cdef double ir6 = 1.0 / r2**3
-    return 48 * ir2 * ir6 * (ir6 - 0.5)
-    
+
+cimport cython
+
+DTYPE = np.float
+ctypedef np.float_t DTYPE_t
+
 def cubic_lattice(L, D, N):
     n = np.ceil(N**(1.0 / D))
     l = L / n
@@ -24,15 +27,26 @@ def cubic_lattice(L, D, N):
         rr[pos], rr[len(rr)-i-1] = rr[len(rr)-i-1], rr[pos]  
     return np.delete(result, indices, axis=0)
     
-cdef inline mic(r, double L):
-    mic = np.abs(r) > L / 2.0
-    r[mic] = r[mic] - L * np.sign(r)[mic]
-
+cdef inline np.float_t LJ(np.float_t r2):
+    cdef np.float_t ir2 = 1.0 / r2
+    cdef np.float_t ir6 = ir2 * ir2 * ir2
+    return 48 * ir2 * ir6 * (ir6 - 0.5)
+    
+cdef inline mic(np.ndarray r, double L, double cutoff):
+    cdef int d = r.shape[0]
+    cdef Py_ssize_t i
+    for i in xrange(d):
+        if r[i] > L -cutoff: #/ 2.0:
+            r[i] -= L
+        elif r[i] < cutoff - L: #- L / 2.0:
+            r[i] += L
+    
 cdef class MD(object):
     cdef double size
     cdef int D
     cdef int nparts
     cdef double cutoff, cutoff2, ecut, dt, _e, _ek, _ep, _temp
+    #~ cdef np.ndarray[DTYPE_t, ndim=2] positions, velocities, forces
     cdef np.ndarray positions, velocities, forces
     def __init__(self, size=10, D=2, nparts=32, T=1, cutoff=4.0, dt=0.001):
         D = int(D)
@@ -53,7 +67,7 @@ cdef class MD(object):
         self.forces = np.zeros((nparts,D))
         self._start_acums()
     
-    def _start_acums(self):
+    cdef _start_acums(self):
         self._e = 0.0
         self._ek = 0.0
         self._ep = 0.0
@@ -76,7 +90,7 @@ cdef class MD(object):
         if self._ep == 0.0:
             for i, j in combinations(xrange(len(self.positions)), 2):
                 r = self.positions[i] - self.positions[j]
-                mic(r, self.size)
+                mic(r, self.size, self.cutoff)
                 r2 = np.sum(r**2)
                 if r2 <= self.cutoff2:
                     ir6 = 1.0 / r2**3
@@ -93,46 +107,48 @@ cdef class MD(object):
     def VCM(self):
         return np.sum(self.velocities, axis=0) / self.nparts
         
-    def check_distances(self):
-        min = self.size
-        for i, j in combinations(xrange(len(self.positions)), 2):
-            r = self.positions[i] - self.positions[j]
-            r = r - self.size * np.floor_divide(r, self.size)
-            r = np.sum(r**2)**0.5
-            if r < min:
-                min = r
-        print 'min=', min
-    
-    def do_step(self):
-        cdef np.ndarray r
-        cdef double r2, ff
-        self._start_acums()
-        self.positions += self.velocities * self.dt + 0.5 * self.forces * self.dt**2
+    @cython.boundscheck(False)
+    @cython.wraparound(False)
+    def ver1(self):
+        self.positions += self.velocities * self.dt + self.forces * (self.dt*self.dt * 0.5)
         self.positions = self.positions - np.rint(self.positions/self.size) * self.size
         self.velocities += 0.5 * self.forces * self.dt
         self.forces = np.zeros((self.nparts,self.D))
-        for i, j in combinations(xrange(len(self.positions)), 2):
-            r = self.positions[i] - self.positions[j]
-            mic(r, self.size)
-            r2 = np.sum(r**2)
-            if r2 <= self.cutoff2:
-                ff = LJ(r2)
-                self.forces[i] += ff * r
-                self.forces[j] -= ff * r
+                
+    @cython.boundscheck(False)
+    @cython.wraparound(False)
+    def ver2(self):
         self.velocities += 0.5 * self.forces * self.dt
+                
+    @cython.boundscheck(False)
+    @cython.wraparound(False)
+    def update_forces(self):
+        cdef np.ndarray[DTYPE_t] r, f
+        cdef np.float64_t r2, ff, ir2, ir6
+        cdef Py_ssize_t i, j, k
+        for i, j in combinations(xrange(self.nparts), 2):
+                r = self.positions[i] - self.positions[j]
+                mic(r, self.size, self.cutoff)
+                #~ r2 = np.sum(r**2)
+                r2 = 0.0
+                for k in xrange(self.D):
+                    r2 += r[k] * r[k]
+                if r2 <= self.cutoff2:
+                    f = LJ(r2) * r
+                    self.forces[i] += f
+                    self.forces[j] -= f
+        
+    def do_step(self):
+        self._start_acums()
+        self.ver1()
+        self.update_forces()
+        self.ver2()
         
     def run(self, steps=10):
-        with open('data/Pos.dat', 'w') as df:
-            for i in xrange(steps):
-                print '\r', i,
-                sys.stdout.flush()
-                self.do_step()
-                #~ for j in xrange(self.nparts):
-                    #~ x, y = self.positions[j]
-                    #~ vx, vy = self.velocities[j]
-                    #~ df.write('%i %f %f %f %f %f %f\n'%(j+1, x, y, 0.0, vx, vy, 0.0))
-                #~ df.write('\n')
-            
-    
+        for i in xrange(steps):
+            print '\r', i,
+            sys.stdout.flush()
+            self.do_step()
+                
 
     

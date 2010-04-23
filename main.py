@@ -2,7 +2,11 @@
 
 import sys
 
-from cmd import MD
+from c_md import MD
+
+def main(steps = 10, **kargs):
+    md = MD(**kargs)
+    md.run(steps)
 
 
 if __name__ == '__main__':
@@ -13,5 +17,4 @@ if __name__ == '__main__':
     #print '#', args
     steps = int(args['steps'])
     del args['steps']
-    m = MD(**args)
-    m.run(steps)
+    main(steps, **args)

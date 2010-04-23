@@ -89,22 +89,13 @@ class MD(object):
     def VCM(self):
         return np.sum(self.velocities, axis=0) / self.nparts
         
-    def check_distances(self):
-        min = self.size
-        for i, j in combinations(xrange(len(self.positions)), 2):
-            r = self.positions[i] - self.positions[j]
-            r = r - self.size * np.floor_divide(r, self.size)
-            r = np.sum(r**2)**0.5
-            if r < min:
-                min = r
-        print 'min=', min
-    
-    def do_step(self):
-        self._start_acums()
+    def ver1(self):
         self.positions += self.velocities * self.dt + 0.5 * self.forces * self.dt**2
         self.positions = self.positions - np.rint(self.positions/self.size) * self.size
         self.velocities += 0.5 * self.forces * self.dt
         self.forces = np.zeros((self.nparts,self.D))
+        
+    def update_forces(self):
         for i, j in combinations(xrange(len(self.positions)), 2):
             r = self.positions[i] - self.positions[j]
             mic(r, self.size)
@@ -113,20 +104,21 @@ class MD(object):
                 ff = LJ(r2)
                 self.forces[i] += ff * r
                 self.forces[j] -= ff * r
+    def ver2(self):
         self.velocities += 0.5 * self.forces * self.dt
         
+    def do_step(self):
+        self._start_acums()
+        self.ver1()
+        self.update_forces()
+        self.ver2()
+        
     def run(self, steps=10):
-        with open('data/Pos.dat', 'w') as df:
-            for i in xrange(steps):
-                print '\r', i,
-                sys.stdout.flush()
-                self.do_step()
-                #~ for j in xrange(self.nparts):
-                    #~ x, y = self.positions[j]
-                    #~ vx, vy = self.velocities[j]
-                    #~ df.write('%i %f %f %f %f %f %f\n'%(j+1, x, y, 0.0, vx, vy, 0.0))
-                #~ df.write('\n')
-            
+        for i in xrange(steps):
+            print '\r', i,
+            sys.stdout.flush()
+            self.do_step()
+                
     
 
     
