@@ -47,7 +47,7 @@ cdef class MD(object):
     cdef int nparts
     cdef double cutoff, cutoff2, ecut, dt, _e, _ek, _ep, _temp
     #~ cdef np.ndarray[DTYPE_t, ndim=2] positions, velocities, forces
-    cdef np.ndarray positions, velocities, forces
+    cdef public np.ndarray positions, velocities, forces
     def __init__(self, size=10, D=2, nparts=32, T=1, cutoff=4.0, dt=0.001):
         D = int(D)
         nparts = int(nparts)
@@ -72,6 +72,10 @@ cdef class MD(object):
         self._ek = 0.0
         self._ep = 0.0
         self._temp = 0.0
+        
+    @property
+    def N(self):
+        return self.nparts
         
     @property
     def T(self):
